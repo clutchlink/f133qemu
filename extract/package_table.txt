@@ -1,0 +1,4 @@
+sunxi-package table @ 0x10000:
+  MIE; 'melis-lzma': rel=0x400 file=0x10400 size=0xfa1c7 props_byte=0x5d (lzma-alone)
+  IIE; 'melis-config': rel=0xfa800 file=0x10a800 size=0xc400 props_byte=0x65 (lzma-alone)
+  IIE; '': rel=0x0 file=0x10000 size=0x0 props_byte=<oob> (raw?)
