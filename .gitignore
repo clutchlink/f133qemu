@@ -1,0 +1,19 @@
+/qemu-preserved/
+/dist/
+
+# Firmware, memory dumps, and local media
+/F133-*.bin
+/F133-Radio-*.AppImage
+/dram*.bin
+/sram.bin
+/music/
+
+# Generated artifacts and local analysis projects
+/extract/
+/ghidra-proj/
+__pycache__/
+*.py[cod]
+
+# Runtime logs, images, and disk images; keep reproducible command lines
+/run/*
+!/run/*.sh

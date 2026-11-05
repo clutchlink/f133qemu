@@ -1,0 +1,207 @@
+diff --git a/hw/block/m25p80.c b/hw/block/m25p80.c
+index 545e0b5..a1a0bbf 100644
+--- a/hw/block/m25p80.c
++++ b/hw/block/m25p80.c
+@@ -356,6 +356,7 @@ static const FlashPartInfo known_devices[] = {
+     { INFO("w25q32dw",    0xef6016,      0,  64 << 10,  64, ER_4K) },
+     { INFO("w25x64",      0xef3017,      0,  64 << 10, 128, ER_4K) },
+     { INFO("w25q64",      0xef4017,      0,  64 << 10, 128, ER_4K) },
++    { INFO("w25q128",     0xef4018,      0,  64 << 10, 256, ER_4K) },
+     { INFO("w25q80",      0xef5014,      0,  64 << 10,  16, ER_4K) },
+     { INFO("w25q80bl",    0xef4014,      0,  64 << 10,  16, ER_4K),
+       .sfdp_read = m25p80_sfdp_w25q80bl },
+diff --git a/hw/dma/Kconfig b/hw/dma/Kconfig
+index 98fbb1b..78854b8 100644
+--- a/hw/dma/Kconfig
++++ b/hw/dma/Kconfig
+@@ -30,3 +30,6 @@ config SIFIVE_PDMA
+ config XLNX_CSU_DMA
+     bool
+     select REGISTER
++
++config SUNXI_DMA
++    bool
+diff --git a/hw/dma/meson.build b/hw/dma/meson.build
+index cc7810b..a5fb740 100644
+--- a/hw/dma/meson.build
++++ b/hw/dma/meson.build
+@@ -12,3 +12,4 @@ system_ss.add(when: 'CONFIG_OMAP', if_true: files('omap_dma.c', 'soc_dma.c'))
+ system_ss.add(when: 'CONFIG_RASPI', if_true: files('bcm2835_dma.c'))
+ system_ss.add(when: 'CONFIG_SIFIVE_PDMA', if_true: files('sifive_pdma.c'))
+ system_ss.add(when: 'CONFIG_XLNX_CSU_DMA', if_true: files('xlnx_csu_dma.c'))
++system_ss.add(when: 'CONFIG_SUNXI_DMA', if_true: files('sunxi_dma.c'))
+diff --git a/hw/dma/trace-events b/hw/dma/trace-events
+index 4c09790..3b0e805 100644
+--- a/hw/dma/trace-events
++++ b/hw/dma/trace-events
+@@ -47,3 +47,8 @@ pl330_iomem_read(uint32_t addr, uint32_t data) "addr: 0x%08"PRIx32" data: 0x%08"
+ 
+ # xilinx_axidma.c
+ xilinx_axidma_loading_desc_fail(uint32_t res) "error:%u"
++
++# sunxi_dma.c
++sunxi_dma_read(uint32_t addr, uint32_t value) "reg[0x%04x] => 0x%08x"
++sunxi_dma_write(uint32_t addr, uint32_t value) "reg[0x%04x] <= 0x%08x"
++sunxi_dma_exec(uint32_t ch, uint32_t lli_addr, uint32_t cfg, uint32_t src, uint32_t dst, uint32_t len, uint32_t next, uint32_t peek) "ch%u lli@0x%08x cfg=0x%08x 0x%08x->0x%08x len=0x%x next=0x%08x dst[0..3]=0x%08x"
+diff --git a/hw/i2c/allwinner-i2c.c b/hw/i2c/allwinner-i2c.c
+index c879e50..3bbb42a 100644
+--- a/hw/i2c/allwinner-i2c.c
++++ b/hw/i2c/allwinner-i2c.c
+@@ -384,6 +384,15 @@ static void allwinner_i2c_write(void *opaque, hwaddr offset,
+         s->ccr = value & TWI_CCR_MASK;
+         break;
+     case TWI_SRST_REG:
++        if (object_dynamic_cast(OBJECT(s), "allwinner.i2c-f133")) {
++            if (value & TWI_SRST_MASK) {
++                uint8_t bus_enabled = s->cntr & TWI_CNTR_BUS_EN;
++                device_cold_reset(DEVICE(s));
++                s->cntr |= bus_enabled;
++            }
++            s->srst = 0;
++            break;
++        }
+         if (((value & TWI_SRST_MASK) == 0) && (s->srst & TWI_SRST_MASK)) {
+             device_cold_reset(DEVICE(s));
+         }
+diff --git a/hw/riscv/Kconfig b/hw/riscv/Kconfig
+index de37c08..63f0109 100644
+--- a/hw/riscv/Kconfig
++++ b/hw/riscv/Kconfig
+@@ -9,6 +9,22 @@ config IBEX
+ 
+ # RISC-V machines in alphabetical order
+ 
++config F133
++    bool
++    default y
++    depends on RISCV64
++    select ALLWINNER_I2C
++    select USB_EHCI_SYSBUS
++    select USB_STORAGE_CLASSIC
++    select RISCV_ACLINT
++    select SERIAL_MM
++    select SIFIVE_PLIC
++    select SSI
++    select SSI_M25P80
++    select SUNXI_DMA
++    select SUNXI_SPI
++    select UNIMP
++
+ config MICROCHIP_PFSOC
+     bool
+     default y
+diff --git a/hw/riscv/meson.build b/hw/riscv/meson.build
+index 0d82cea..964ae98 100644
+--- a/hw/riscv/meson.build
++++ b/hw/riscv/meson.build
+@@ -13,6 +13,7 @@ riscv_ss.add(when: 'CONFIG_SPIKE', if_true: files('spike.c'))
+ riscv_ss.add(when: 'CONFIG_MICROCHIP_PFSOC', if_true: files('microchip_pfsoc.c'))
+ riscv_ss.add(when: 'CONFIG_TENSTORRENT', if_true: files('tt_atlantis.c'))
+ riscv_ss.add(when: 'CONFIG_ACPI', if_true: files('virt-acpi-build.c'))
++riscv_ss.add(when: 'CONFIG_F133', if_true: files('f133.c'))
+ riscv_ss.add(when: 'CONFIG_RISCV_IOMMU', if_true: files(
+ 	'riscv-iommu.c', 'riscv-iommu-pci.c', 'riscv-iommu-sys.c', 'riscv-iommu-hpm.c'))
+ riscv_ss.add(when: 'CONFIG_MICROBLAZE_V', if_true: files('microblaze-v-generic.c'))
+diff --git a/hw/ssi/Kconfig b/hw/ssi/Kconfig
+index 1bd5646..81985f5 100644
+--- a/hw/ssi/Kconfig
++++ b/hw/ssi/Kconfig
+@@ -6,6 +6,10 @@ config SIFIVE_SPI
+     bool
+     select SSI
+ 
++config SUNXI_SPI
++    bool
++    select SSI
++
+ config SSI
+     bool
+ 
+diff --git a/hw/ssi/meson.build b/hw/ssi/meson.build
+index 6afb1ea..607728a 100644
+--- a/hw/ssi/meson.build
++++ b/hw/ssi/meson.build
+@@ -4,6 +4,7 @@ system_ss.add(when: 'CONFIG_MSF2', if_true: files('mss-spi.c'))
+ system_ss.add(when: 'CONFIG_NPCM7XX', if_true: files('npcm7xx_fiu.c', 'npcm_pspi.c'))
+ system_ss.add(when: 'CONFIG_PL022', if_true: files('pl022.c'))
+ system_ss.add(when: 'CONFIG_SIFIVE_SPI', if_true: files('sifive_spi.c'))
++system_ss.add(when: 'CONFIG_SUNXI_SPI', if_true: files('sunxi_spi.c'))
+ system_ss.add(when: 'CONFIG_SSI', if_true: files('ssi.c'))
+ system_ss.add(when: 'CONFIG_STM32F2XX_SPI', if_true: files('stm32f2xx_spi.c'))
+ system_ss.add(when: 'CONFIG_XILINX_SPI', if_true: files('xilinx_spi.c'))
+diff --git a/hw/ssi/trace-events b/hw/ssi/trace-events
+index b9d8648..6e0ce2b 100644
+--- a/hw/ssi/trace-events
++++ b/hw/ssi/trace-events
+@@ -62,3 +62,7 @@ allwinner_a10_spi_tx(uint8_t byte) "write 0x%02x"
+ allwinner_a10_spi_rx(uint8_t byte) "read 0x%02x"
+ allwinner_a10_spi_read(const char* regname, uint32_t value) "reg[%s] => 0x%08x"
+ allwinner_a10_spi_write(const char* regname, uint32_t value) "reg[%s] <= 0x%08x"
++
++# sunxi_spi.c
++sunxi_spi_read(uint32_t addr, uint32_t value) "reg[0x%04x] => 0x%08x"
++sunxi_spi_write(uint32_t addr, uint32_t value) "reg[0x%04x] <= 0x%08x"
+diff --git a/target/riscv/tcg/cpu_helper.c b/target/riscv/tcg/cpu_helper.c
+index 07d9222..b79cdf4 100644
+--- a/target/riscv/tcg/cpu_helper.c
++++ b/target/riscv/tcg/cpu_helper.c
+@@ -21,6 +21,7 @@
+ #include "qemu/log.h"
+ #include "qemu/main-loop.h"
+ #include "cpu.h"
++#include "cpu_vendorid.h"
+ #include "internals.h"
+ #include "pmu.h"
+ #include "exec/cputlb.h"
+@@ -1212,6 +1213,17 @@ static int get_physical_address(CPURISCVState *env, hwaddr *physical,
+         if (riscv_cpu_sxl(env) == MXL_RV32) {
+             ppn = pte >> PTE_PPN_SHIFT;
+         } else {
++            if (riscv_cpu_cfg(env)->mvendorid == THEAD_VENDOR_ID) {
++                /*
++                 * T-Head C906 MAEE: PTE bits 63:60 are vendor-specific
++                 * (SB shareable + PMA physical-memory-attribute), are
++                 * neither reserved nor part of the PPN.  Clear them so
++                 * the standard reserved-bit/Pbmt/N checks below don't
++                 * fault on valid T-Head page tables (e.g. the Allwinner
++                 * melis kernel maps DRAM with PMA=0b111).
++                 */
++                pte &= ~((target_ulong)0xF << 60);
++            }
+             if (pte & PTE_RESERVED(svrsw60t59b)) {
+                 qemu_log_mask(LOG_GUEST_ERROR, "%s: reserved bits set in PTE: "
+                               "addr: 0x%" HWADDR_PRIx " pte: 0x" TARGET_FMT_lx "\n",
+diff --git a/target/riscv/tcg/th_csr.c b/target/riscv/tcg/th_csr.c
+index e6f6429..4568f1e 100644
+--- a/target/riscv/tcg/th_csr.c
++++ b/target/riscv/tcg/th_csr.c
+@@ -136,6 +136,20 @@ static RISCVException read_unimp_th_csr(CPURISCVState *env, int csrno,
+     return RISCV_EXCP_NONE;
+ }
+ 
++static RISCVException read_th_mapbaddr(CPURISCVState *env, int csrno,
++                                       target_ulong *val)
++{
++    /*
++     * MAPBADDR is the SoC memory-map (DRAM) base address, hardwired by
++     * the vendor.  The Allwinner F133/D1 (sun20iw1) C906 maps DRAM at
++     * 0x40000000; OpenSBI (Allwinner fork) reads this CSR to learn the
++     * DRAM window ([mapbaddr, mapbaddr + size)) and plants boot flags
++     * inside it, so returning 0 here causes store faults on real code.
++     */
++    *val = 0x40000000;
++    return RISCV_EXCP_NONE;
++}
++
+ static RISCVException read_th_sxstatus(CPURISCVState *env, int csrno,
+                                        target_ulong *val)
+ {
+@@ -223,7 +237,7 @@ const RISCVCSR th_csr_list[] = {
+     {
+         .csrno = CSR_TH_MAPBADDR,
+         .insertion_test = test_thead_mvendorid,
+-        .csr_ops = { "th.mapbaddr", mmode, read_unimp_th_csr }
++        .csr_ops = { "th.mapbaddr", mmode, read_th_mapbaddr }
+     },
+     {
+         .csrno = CSR_TH_SXSTATUS,

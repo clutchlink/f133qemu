@@ -7,5 +7,6 @@ exec qemu/build/qemu-system-riscv64 \
     -M f133 \
     -bios extract/boot0.bin \
     -drive if=mtd,format=raw,file=F133-20220107_HZ-BX-B5678-UI3-V1.9-20240419-1616.bin \
+    -snapshot \
     -nographic \
     "$@"

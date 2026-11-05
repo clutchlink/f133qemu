@@ -5,7 +5,7 @@ Guidance for AI agents (and humans) working in this repo. Read this first.
 ## 1. Project goal
 
 Emulate the firmware of a radio head-unit based on the **Allwinner F133**
-(sun20iw1, T-Head **C906** RV64 core) using a **fork of QEMU**, so that the
+(sun20iw1, T-Head **C906** RV64 core) using **QEMU**, so that the
 full boot chain runs and the device's **UI renders to a screen** we can see
 in QEMU.
 
@@ -83,7 +83,10 @@ for the C906 CPU model).
 ├── extract/                   # carved/decompressed artifacts (generated)
 ├── tools/                     # python scripts for carving/parsing (add here)
 ├── notes/                     # markdown notes: RE findings, MMIO maps, call logs
-├── qemu/                      # the QEMU fork (git clone + topic branch f133)
+├── Makefile                   # setup, build, boot, UI and smoke targets
+├── src/                       # flat F133 machine and device sources
+├── qemu.patch                 # surgical changes against upstream QEMU
+├── qemu/                      # pinned upstream QEMU submodule
 └── run/                       # runtime artifacts: flash images, logs, screenshots
 ```
 
@@ -93,22 +96,25 @@ Rules:
   clean checkout (`python3 tools/<name>.py`), writing to `extract/`.
 - Put RE findings (address maps, decoded headers, boot logs annotated) in
   `notes/` — AGENTS.md stays high-level and stable.
-- The QEMU fork lives in `qemu/`; our changes go on topic branch `f133`
-  (base: latest stable upstream master). Keep upstream files untouched
-  except for the additions we own: `hw/riscv/f133*.c`, `hw/char/sunxi_uart.c`
-  (or reuse `serial-mm`), Kconfig/meson wiring, docs.
+- Put F133-owned QEMU source and headers in flat `src/`. `make setup` links
+  them into the pinned `qemu/` submodule and applies `qemu.patch`. Keep
+  necessary upstream modifications in that patch, not in a submodule commit.
 
 ## 5. Environment
 
 - Host: Linux x86_64, 24 cores, 30 GiB RAM, ~205 GiB free, network OK.
 - Available: `git`, `gcc`, `meson`, `ninja`, `python3`, `make`.
-- QEMU build: standard meson flow; build dir out-of-tree, e.g.
-  `qemu/build`, configure with `--target-list=riscv64-softmmu`.
+- QEMU build: `make build` configures `qemu/build` for riscv64 and VNC;
+  `make smoke` checks the app and framebuffer.
 - A Ghidra MCP server may be attached to a session (`tools.ghidra.*`); call
   `get_program_info()` first to see which binary is loaded. Use it for
   boot0/OpenSBI/Melis RE sessions; record conclusions in `notes/`.
 
 ## 6. Milestones (in order — do not skip ahead)
+
+The milestones below are historical bring-up notes. Current status is in
+`notes/melis-progress.md`: Melis mounts flash, starts the app and produces a
+partial LCD image; touch and complete display composition remain unimplemented.
 
 1. **M1 — Carve & document.** ✅ DONE: `tools/carve.py`, `tools/parse_gpt.py`,
    `tools/analyze_payload.py` → `extract/` (boot0, melis-lzma, melis-config);
@@ -118,12 +124,13 @@ Rules:
 2. **M2 — QEMU fork builds.** ✅ DONE: `qemu/` on branch `f133` (base
    v11.1.2), machine `-M f133` + sunxi-spi device + w25q128 flash entry;
    commit 256974b.
-3. **M3 — boot0 console.** 🚧 IN PROGRESS: banner + commit banner on UART3;
-   chip-id, RTC, PLL, DRAM-init polls all pass; **open blocker: boot0 jumps
-   to 0x20 (failure path) after touching DMA @0x03002000 during DRAM init**.
-   Details + fix history in `notes/boot0-progress.md`.
-4. **M4 — OpenSBI.** boot0 loads the `melis-lzma` package from emulated
-   SPI NOR into DRAM and jumps; OpenSBI banner appears on UART.
+3. **M3 — boot0 console.** ✅ DONE: boot0 runs fully — banner on UART3,
+   SPI NOR id, DRAM init, full package load via DMA, LZMA decompress,
+   jump to OpenSBI @0x40004000. History in `notes/boot0-progress.md`.
+4. **M4 — OpenSBI.** 🚧 IN PROGRESS: boot0 handoff works; OpenSBI console
+   alive (UART tail-region stub), but OpenSBI store-faults on
+   `*(base + 0x1ffffc) = 1` with base==0 before its banner. See
+   `notes/opensbi.md`.
    (Blob layout verified: loads at 0x40000000, entry 0x40004000, melis
    payload ELF @+0x7e00 loads at SRAM 0x21000.)
 5. **M5 — Melis kernel.** OpenSBI hands off to the embedded ELF payload;
@@ -149,15 +156,23 @@ and why in `notes/stubs.md`.
 - When an address is first touched, note it in `notes/mmio.md` (address,
   size, who touched it, guess at peripheral) — this becomes our SoC map.
 
-## 8. Repo state (as of the first bring-up session)
+## 8. Historical repo state (first bring-up session)
 
-- `qemu/` branch `f133`, commit `256974b` — machine + devices build clean.
-- Bring-up command: `run/cmdline-boot0.sh` (boot0 via `-bios`, flash via
-  `-drive if=mtd`).
-- `notes/boot0-progress.md` — fix history + current blocker (DMA in DRAM
-  init; boot0 failure-jump to 0x20).
-- gdb-on-QEMU (`-S -gdb tcp::1234` + gdb-multiarch) is the most effective
-  analysis tool; capstone for static work; Ghidra MCP currently unavailable.
+- `qemu/` branch `f133`, base commit `256974b` — machine, sunxi-spi (with
+  per-burst CS frames), sunxi-dma, UART tail region; **uncommitted work
+  present** — commit when M4 stabilizes.
+- Bring-up command: `run/cmdline-boot0.sh`-style (boot0 via `-bios`, flash
+  via `-drive if=mtd`); keep a monitor on tcp:4444 + gdbstub `-S -gdb
+  tcp::1235` for live debugging.
+- `notes/boot0-progress.md` (M3 history), `notes/opensbi.md` (M4 status
+  + next steps), `notes/mmio.md`, `notes/spi0.md`.
+- gdb-on-QEMU is the most effective tool; capstone RVC decoding is
+  unreliable on this image — prefer gdb `x/i` on the live target.
+
+## Tips from human
+- please use ghidra to accelerate development whenever you can
+- please use existing kernel work to accelerate research whenever you can
+- you are in a temporary container that's yours - install whatever you want or might need that could be useful to accelerate research
 
 ## 9. Out of scope (for now)
 

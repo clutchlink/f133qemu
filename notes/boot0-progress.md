@@ -54,3 +54,14 @@ Next actions:
 - `-d unimp` to enumerate MMIO the firmware touches; per-device logging
   (mbus) for write/read sequences
 - `notes/mmio.md` has the address map; `notes/spi0.md` the SPI protocol.
+## Status update (this session)
+
+- **M3 done, M4 reached**: boot0 loads the full package (19 DMA bursts,
+  0x10000–0x110000 → DRAM 0x41000000), LZMA-decompresses, and jumps to
+  OpenSBI entry 0x40004000. The CS-per-burst fix in `hw/ssi/sunxi_spi.c`
+  (xfer_active-gated CS frame) was the key — see history above.
+- **OpenSBI console works** after adding the UART tail region
+  (f133_uart_tail_ops) — trap dumps print on serial.
+- **Current blocker**: OpenSBI store-faults on `*(base + 0x1ffffc) = 1`
+  where the base global (+0x70 of struct @0x4000C248) reads 0. Details,
+  disassembly and next steps: `notes/opensbi.md`.

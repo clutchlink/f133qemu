@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=F133 Radio Emulator
+Comment=Emulate the Allwinner F133 radio firmware
+Exec=f133-radio %f
+Icon=f133-radio
+Terminal=false
+Categories=System;Emulator;

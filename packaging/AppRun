@@ -1,0 +1,60 @@
+#!/bin/sh
+# Firmware is deliberately external. Never write directly to the supplied dump.
+set -eu
+APPDIR=${APPDIR:-$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)}
+export APPDIR
+export LD_LIBRARY_PATH="$APPDIR/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
+# Direct access to the bundled QEMU, without the firmware convenience wrapper.
+if [ "${1:-}" = --qemu ]; then
+    shift
+    exec "$APPDIR/usr/bin/qemu-system-riscv64" "$@"
+fi
+
+fail() {
+    printf '%s\n' "$*" >&2
+    if [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then
+        "$APPDIR/usr/bin/f133-firmware-picker" --error "$*" 2>/dev/null || :
+    fi
+    exit 1
+}
+
+firmware=${1:-${F133_FIRMWARE:-}}
+if [ "$#" -gt 0 ]; then shift; fi
+if [ -z "$firmware" ] && [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then
+    firmware=$("$APPDIR/usr/bin/f133-firmware-picker") || exit 1
+fi
+[ -n "$firmware" ] || fail 'Select a firmware file or run: F133-Radio-x86_64.AppImage /path/to/firmware.bin'
+[ -f "$firmware" ] && [ -r "$firmware" ] || fail "Cannot read firmware: $firmware"
+firmware=$(realpath "$firmware") || fail 'Could not resolve firmware path'
+size=$(wc -c < "$firmware")
+magic=$(dd if="$firmware" bs=1 skip=4 count=8 2>/dev/null)
+[ "$size" -eq 16777216 ] && [ "$magic" = 'eGON.BT0' ] || \
+    fail 'Expected a 16 MiB SPI NOR image with eGON.BT0 magic.'
+
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/f133-radio.XXXXXXXX")
+trap 'rm -f "$tmp/boot0.bin"; rmdir "$tmp"' EXIT HUP INT TERM
+dd if="$firmware" of="$tmp/boot0.bin" bs=65536 count=1 2>/dev/null
+
+# QEMU's option parser escapes a comma in a filename as two commas.
+drive_file=$(printf '%s' "$firmware" | sed 's/,/,,/g')
+if [ -n "${F133_USB_IMAGE:-}" ]; then
+    [ -f "$F133_USB_IMAGE" ] && [ -r "$F133_USB_IMAGE" ] || fail "Cannot read USB image: $F133_USB_IMAGE"
+    usb_image=$(realpath "$F133_USB_IMAGE") || fail 'Could not resolve USB image path'
+    usb_drive=$(printf '%s' "$usb_image" | sed 's/,/,,/g')
+    set -- -drive "if=none,id=f133usb,format=raw,file=$usb_drive" \
+        -device usb-storage,drive=f133usb "$@"
+    printf 'USB image (temporary snapshot): %s\n' "$usb_image" >&2
+fi
+set -- "$APPDIR/usr/bin/qemu-system-riscv64" \
+    -L "$APPDIR/usr/share/qemu" -M f133 -bios "$tmp/boot0.bin" \
+    -drive "if=mtd,format=raw,file=$drive_file" -snapshot \
+    -display gtk -serial stdio "$@"
+# Print each argument separately with shell quoting for paths containing spaces.
+printf 'QEMU command:' >&2
+for arg do
+    quoted=$(printf '%s' "$arg" | sed "s/'/'\\\\''/g")
+    printf " '%s'" "$quoted" >&2
+done
+printf '\n' >&2
+"$@"

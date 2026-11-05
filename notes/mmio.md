@@ -8,7 +8,9 @@ model in `qemu/hw/riscv/f133.c`; "stub" = unimplemented-device logging.
 |---|---|---|---|---|
 | 0x00020000 | 0x28000 | SRAM A1 | implemented (RAM) | boot0 loads here (BROM entry 0x20000); boot0 uses sp=0x48000 |
 | 0x01c08000 | 0x1000 | legacy sunxi | stub | referenced by OpenSBI region code |
-| 0x02000000 | 0x800 | pio (pinctrl) | stub | boot0 configures SPI0 pins: PC2-PC5 (offsets 0x30/0x40/0x44/0x54) |
+| 0x02000000 | 0x800 | pio (pinctrl) | minimal register storage | boot0 configures SPI0 pins; PF6 is held high for an empty active-low SD detect switch |
+| 0x020002d0 | 0x08 | PG interrupt enable/status | partial | PG7 GT911 interrupt, write-one-to-clear status; PLIC source 95 |
+| 0x02502c00 | 0x400 | I2C3 | partial | GT911 at address 0x5d, PLIC source 28; legacy engine registers only |
 | 0x02001000 | 0x1000 | CCU | implemented (stateful) | PLL_CPU_CTRL @0x000: LOCK=bit28, LOCK_ENABLE=bit29; boot0 polls after "set pll start"; also 0x90c, 0xa5c, 0xd00 |
 | 0x02002000 | 0x1000 | syscfg? | stub | heavily referenced by OpenSBI region (x15) |
 | 0x02030000 | 0x1000 | unk (pll/arisc?) | stub | boot0 "set pll start" writes 0x31c, 0x348 |
@@ -28,7 +30,9 @@ model in `qemu/hw/riscv/f133.c`; "stub" = unimplemented-device logging.
 | 0x04020000+ | 0x1000 | mmc0/1/2 | stub | |
 | 0x04025000 | 0x1000 | **SPI0** | implemented (hw/ssi/sunxi_spi.c) | see notes/spi0.md |
 | 0x04026000 | 0x1000 | spi1 | stub | |
-| 0x04100000/0x04200000 | | usb | stub | |
+| 0x04100000 | | usb0 | stub | |
+| 0x04200000 | | usb1 EHCI | partial | one high-speed port, PLIC source 49; see notes/usb-bringup.md |
+| 0xc0000000 | RAM size | DRAM alias | experimental | permits EHCI DMA using firmware addresses; actual bus translation unverified |
 | 0x04500000 | 0x10000 | emac | stub | |
 | 0x05000000 | 0x10000 | de clk | stub | display pipeline (M6/M7 target) |
 | 0x05100000/0x05200000 | 0x100000 | mixer0/1 | stub | display |
