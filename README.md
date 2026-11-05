@@ -7,3 +7,7 @@ Given SPI flash dump, it can emulate the firmware entirely, including touchscree
 Short term goal is for pentesting and seeing if custom code execution is possible.
 
 ![](notes/Screenshot_20261105_141251.png)![](notes/Screenshot_20261105_141206.png)
+
+Credits/inspiration:
+- https://github.com/fuho/moto-display-re
+- https://github.com/Gamadril/d1s-melis-tools
